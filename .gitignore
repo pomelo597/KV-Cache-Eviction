@@ -1,0 +1,21 @@
+# 忽略结果文件夹
+result/
+results_*/
+
+# 忽略压缩包
+*.tar.gz
+*.zip
+
+# 忽略模型和大文件
+*.pt
+*.bin
+*.npy
+*.h5
+*.ckpt
+
+# 忽略日志
+*.log
+
+# Python 缓存
+__pycache__/
+*.pyc
