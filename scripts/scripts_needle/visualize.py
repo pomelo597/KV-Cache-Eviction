@@ -7,7 +7,7 @@ import pandas as pd
 import json
 import glob
 
-FOLDER_PATH = "/data/SemBlock/results_needle/results/LlaMA3_streamingllm_96_test/"
+FOLDER_PATH = "/data/SemBlock/result/results_needle/LlaMA3_semblock_96_test/"
 MODEL_NAME  = "LlaMa3"
 PRETRAINED_LEN=33000
 
@@ -53,8 +53,6 @@ def main():
 
     # Creating a DataFrame
     df = pd.DataFrame(data)
-    
-
 
     locations = list(df["Context Length"].unique())
     locations.sort()

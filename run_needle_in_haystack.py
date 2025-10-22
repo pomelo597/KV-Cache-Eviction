@@ -514,7 +514,6 @@ class LLMNeedleHaystackTester:
         self.run_test(args)
 
     def _sent_split(self, text: str):
-        """句子切分：可替换为你自己的 fine_grained_sent_split。"""
         import re
         raw_segs = re.split(r'[。．.；;,，\n]', text)
         return [s.strip() for s in raw_segs if s.strip() and re.search(r'\w', s)]
@@ -522,7 +521,7 @@ class LLMNeedleHaystackTester:
     def _build_segment_boundaries_head_tail_sentence(
         self,
         tokenizer,
-        input_ids_no_special,   # List[int]，无 special 的 token 序列
+        input_ids_no_special,
         head_size: int,
         tail_size: int,
         merge_small: bool = False,
