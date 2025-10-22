@@ -322,7 +322,7 @@ class SemBlockCluster():
         attn_logits = torch.matmul(q_last, k_all.transpose(2, 3)) / math.sqrt(head_dim)
 
         attn = F.softmax(attn_logits, dim=-1, dtype=torch.float32)
-        attn = attn.squeeze(2).mean(dim=0)                         
+        attn = attn.squeeze(2).mean(dim=0)
 
         result = []
         for start, end in segment_boundaries:
@@ -334,18 +334,17 @@ class SemBlockCluster():
 
             I_k = attn_seg.sum(dim=0).mean().item()
 
-            p = attn_seg 
-            logp = torch.zeros_like(p)
-            pos = p > 0
-            logp[pos] = torch.log(p[pos])
-            entropy = (-p[pos] * logp[pos]).sum(dim=0).mean()
+            p = attn_seg / (attn_seg.sum(dim=0, keepdim=True) + 1e-16)
+            logp = torch.where(p > 0, torch.log(p), torch.zeros_like(p))
+            entropy = (-p * logp).sum(dim=0).mean()
             D_k = entropy.item()
 
             omega_k = I_k * (1 + eta * D_k)
-            retain = (omega_k > theta_omega) and (L_k < theta_L)
+            #print("eta:",eta)
 
             result.append({
-                "start": start, "end": end, "L_k": L_k, "I_k": I_k, "D_k": D_k, "omega_k": omega_k, "retain": retain})
+                "start": start, "end": end, "L_k": L_k, "I_k": I_k, "D_k": D_k, "omega_k": omega_k
+            })
         return result
 
     def _clip_segments_to_past(self, segments, past_len):
@@ -367,237 +366,158 @@ class SemBlockCluster():
         if not segment_boundaries:
             return token_scores.topk(K_total, dim=-1).indices
 
-        segs = self._clip_segments_to_past(segment_boundaries, T)
-        if not segs:
+        segs_list = []
+        for s, e in segment_boundaries:
+            s_cl = max(0, min(int(s), T))
+            e_cl = max(0, min(int(e), T))
+            if e_cl > s_cl:
+                segs_list.append((s_cl, e_cl))
+        if not segs_list:
             return token_scores.topk(K_total, dim=-1).indices
 
-        S = len(segs)
-        seg_starts = torch.tensor([s for s, _ in segs], device=device, dtype=dtl)
-        seg_ends   = torch.tensor([e for _, e in segs], device=device, dtype=dtl)
-        seg_lens   = (seg_ends - seg_starts).clamp_min(0)
-        if int(seg_lens.max().item()) == 0:
-            return token_scores.topk(K_total, dim=-1).indices
+        segs = torch.tensor(segs_list, device=device, dtype=dtl)
+        seg_starts, seg_ends = segs[:, 0], segs[:, 1]
+        seg_lens = seg_ends - seg_starts
+        S = segs.size(0)
 
-        out_idx = torch.empty((B, H, K_total), dtype=dtl, device=device)
+        # ==== 合并 batch/head ====
+        BH = B * H
+        scores = token_scores.reshape(BH, T)
 
-        unique_L = torch.unique(seg_lens)
-        groups_L = {}
-        for L in unique_L.tolist():
-            if L <= 0:
+        gh_head = scores.topk(K_total, dim=1).indices
+        base_mask = torch.zeros_like(scores, dtype=torch.bool)
+        base_mask.scatter_(1, gh_head, True)
+
+        L_max = int(seg_lens.max().item())
+        r = torch.arange(L_max, device=device)
+        idx_grid = seg_starts.unsqueeze(1) + r.unsqueeze(0)
+        valid_mask = r.unsqueeze(0) < seg_lens.unsqueeze(1)
+
+        right_cap = (seg_ends.unsqueeze(1) - 1).clamp(min=0)
+        idx_grid = torch.minimum(idx_grid, right_cap)
+
+        idx_grid = idx_grid.clamp(min=0, max=T - 1)
+
+        idx_grid_bh = idx_grid.unsqueeze(0).expand(BH, S, L_max)
+        valid_mask_bh = valid_mask.unsqueeze(0).expand(BH, S, L_max)
+
+        idx_flat = idx_grid_bh.reshape(BH, -1)
+        bad_mask = (idx_flat < 0) | (idx_flat >= T)
+        if bad_mask.any():
+            idx_min = int(idx_flat.min().item())
+            idx_max = int(idx_flat.max().item())
+            raise RuntimeError(
+                f"Pre-gather OOB: T={T}, idx_min={idx_min}, idx_max={idx_max}, bad={int(bad_mask.sum().item())}"
+            )
+
+        seg_vals = scores.gather(1, idx_grid_bh.reshape(BH, -1)).reshape(BH, S, L_max)  # (BH,S,L_max)
+        seg_hits = base_mask.gather(1, idx_grid_bh.reshape(BH, -1)).reshape(BH, S, L_max) & valid_mask_bh
+
+        n_selects = seg_hits.sum(-1)
+        base_sum  = (seg_vals * seg_hits).sum(-1)
+
+        bs_cur = torch.minimum(torch.full_like(n_selects, 13), n_selects.clamp(min=1))
+        active = (n_selects > 0) & (seg_lens.unsqueeze(0) > 0)
+        accepted = torch.zeros_like(active, dtype=torch.bool)
+
+        cand_tokens = [[None for _ in range(S)] for _ in range(BH)]
+
+        for bs_val in [13, 11, 9, 7, 5, 3, 2, 1]:
+            mask_hs = (bs_cur == bs_val) & (~accepted) & active     # (BH,S)
+            if not mask_hs.any():
                 continue
-            m = (seg_lens == L)
-            idx = torch.nonzero(m, as_tuple=False).squeeze(-1)
-            groups_L[L] = {
-                "idx": idx,
-                "starts": seg_starts[idx],
-                "lens": seg_lens[idx]
-            }
 
-        for b in range(B):
-            s_all = token_scores[b]
+            seg_buf = seg_vals * valid_mask_bh
+            seg_blk = seg_buf.unfold(dimension=-1, size=bs_val, step=bs_val)
+            block_sums = seg_blk.sum(-1)
 
-            gh_head = s_all.topk(K_total, dim=-1).indices
-            base_mask = torch.zeros((H, T), dtype=torch.bool, device=device)
-            base_mask.scatter_(1, gh_head, True)
+            n_blocks = (seg_lens + bs_val - 1) // bs_val
+            n_blocks_bh = n_blocks.unsqueeze(0).expand(BH, S)
 
-            n_selects_h = torch.zeros((H, S), dtype=dtl, device=device)
-            base_sum_h  = torch.zeros((H, S), dtype=token_scores.dtype, device=device)
+            k_blocks = (n_selects + bs_val - 1) // bs_val
+            k_blocks = torch.clamp(k_blocks, min=0)
+            k_blocks = torch.minimum(k_blocks, n_blocks_bh)
 
-            for L, G in groups_L.items():
-                idxL   = G["idx"]
-                starts = G["starts"]
-                r = torch.arange(L, device=device, dtype=dtl)
-                idx_grid = starts.unsqueeze(1) + r.unsqueeze(0)
+            k_max_allowed = int(block_sums.size(-1))
+            k_max = int(k_blocks.max().item()) if k_blocks.numel() > 0 else 0
+            k_max = max(1, min(k_max, k_max_allowed))
 
-                hit = base_mask[:, idx_grid]
-                vals = s_all[:, idx_grid]
-                n_sel = hit.sum(dim=-1)
-                base_sum = (vals * hit).sum(dim=-1)
+            top_blk = block_sums.topk(dim=-1, k=k_max).indices
 
-                n_selects_h[:, idxL] = n_sel
-                base_sum_h[:, idxL] = base_sum
+            chosen_sum = block_sums.gather(-1, top_blk[..., :1]).squeeze(-1)
+            ratio = (chosen_sum + eps) / (base_sum + eps)
+            accept = (ratio >= self.threshold) | (bs_val == 1)
 
-            active = (n_selects_h > 0) & (seg_lens.unsqueeze(0) > 0)
-            bs0 = torch.minimum(torch.full_like(n_selects_h, 13), n_selects_h.clamp(min=1))
-            bs_cur = torch.where(active, bs0, torch.zeros_like(bs0))
+            accept_idx = torch.nonzero(accept & mask_hs, as_tuple=False)
+            if accept_idx.numel() > 0:
+                bs_offsets = torch.arange(bs_val, device=device)
 
-            cand_tokens_hs = [[None for _ in range(S)] for _ in range(H)]
-            accepted = torch.zeros((H, S), dtype=torch.bool, device=device)
-
-            for bs_val in [13, 11, 9, 7, 5, 3, 2, 1]:
-                bucket_hs = (bs_cur == bs_val) & (~accepted) & active
-                if not bucket_hs.any():
-                    continue
-
-                for L, G in groups_L.items():
-                    if L <= 0:
-                        continue
-                    idxL = G["idx"]
-                    mask_L = bucket_hs[:, idxL]
-                    if not mask_L.any():
+                for bh, s in accept_idx.tolist():
+                    kb = int(k_blocks[bh, s].item())
+                    if kb <= 0:
                         continue
 
-                    hs_idx = torch.nonzero(mask_L, as_tuple=False)
-                    if hs_idx.numel() == 0:
-                        continue
+                    blk_ids = top_blk[bh, s, :kb]                   # (<= n_blocks)
+                    start = int(seg_starts[s].item())
+                    end   = int(seg_ends[s].item())
 
-                    h_e = hs_idx[:, 0]
-                    s_local = hs_idx[:, 1]
-                    s_abs = idxL[s_local]
+                    cand_abs = (blk_ids.unsqueeze(-1) * bs_val + bs_offsets).reshape(-1) + start
+                    cand_abs = cand_abs[cand_abs < end]
+                    if cand_abs.numel() > 0:
+                        cand_tokens[bh][s] = cand_abs
 
-                    starts_e = seg_starts[s_abs]
-                    nsel_e = n_selects_h[h_e, s_abs]
-                    base_e = base_sum_h[h_e, s_abs]
+            accepted |= accept & mask_hs
 
-                    n_blocks_L = (L + bs_val - 1) // bs_val
-                    k_blocks_all = torch.clamp((nsel_e + bs_val - 1) // bs_val,
-                                                min=0, max=n_blocks_L)
-                    if not (k_blocks_all > 0).any():
-                        bs_cur[h_e, s_abs] = torch.clamp(bs_cur[h_e, s_abs] - 1, min=1)
-                        continue
+            still = (~accept) & mask_hs
+            if still.any():
+                bs_cur = torch.where(still, (bs_cur - 1).clamp(min=1), bs_cur)
 
-                    block_starts = torch.arange(n_blocks_L, device=device, dtype=dtl) * bs_val
-                    tok_off = torch.arange(bs_val, device=device, dtype=dtl)
+            if (~active | accepted).all():
+                break
 
-                    unique_k = torch.unique(k_blocks_all)
-                    for k_need in unique_k.tolist():
-                        if k_need <= 0:
-                            continue
-                        sel_mask = (k_blocks_all == k_need)
-                        if not sel_mask.any():
-                            continue
+        out_idx = torch.empty((BH, K_total), dtype=dtl, device=device)
+        for bh in range(BH):
+            pairs = []
+            for s in range(S):
+                ki = int(n_selects[bh, s].item())
+                cand = cand_tokens[bh][s]
+                if cand is not None and cand.numel() > 0 and ki > 0:
+                    pairs.append((ki, cand))
 
-                        idx_sub   = torch.nonzero(sel_mask, as_tuple=False).squeeze(-1)
-                        h_sub     = h_e[idx_sub]
-                        s_sub     = s_abs[idx_sub]
-                        nsel_sub  = nsel_e[idx_sub]
-                        base_sub  = base_e[idx_sub]
-                        starts_sub= starts_e[idx_sub]
-                        G2 = idx_sub.numel()
+            if not pairs:
+                out_idx[bh] = gh_head[bh, :K_total]
+                continue
 
-                        r = torch.arange(L, device=device, dtype=dtl)
-                        idx_g = starts_sub.unsqueeze(1) + r.unsqueeze(0)
-                        seg_buf = s_all[h_sub].gather(1, idx_g)
+            chosen = []
+            for ki, cand in pairs:
+                scores_cand = scores[bh].gather(0, cand)
+                k_take = min(ki, cand.numel())
+                _, topi = scores_cand.topk(k_take)
+                chosen.append(cand[topi])
 
-                        blk_pos = block_starts.view(1, n_blocks_L, 1) + tok_off.view(1, 1, bs_val)
-                        blk_pos = blk_pos.expand(G2, -1, -1)
-                        valid_blk = blk_pos < L
+            selected = torch.cat(chosen, dim=0)
 
-                        pos_rel = blk_pos.clamp_max(L - 1)
-                        seg_buf_exp = seg_buf.unsqueeze(1).expand(G2, n_blocks_L, L)
-                        seg_blk = torch.gather(seg_buf_exp, 2, pos_rel)
-                        seg_blk = seg_blk * valid_blk
-                        block_sums = seg_blk.sum(dim=-1)
+            if selected.numel() > 1:
+                try:
+                    selected = torch.unique_consecutive(selected)
+                except Exception:
+                    sel_list = selected.detach().cpu().tolist()
+                    seen, kept = set(), []
+                    for x in sel_list:
+                        if x not in seen:
+                            seen.add(x)
+                            kept.append(x)
+                    selected = torch.tensor(kept, dtype=selected.dtype, device=selected.device)
 
-                        _, top_blk = torch.topk(block_sums, k=k_need, dim=-1)
-                        blk_start_off = starts_sub.unsqueeze(1) + (top_blk * bs_val)
+            if selected.numel() < K_total:
+                remain = gh_head[bh][~torch.isin(gh_head[bh], selected)]
+                need = K_total - selected.numel()
+                selected = torch.cat([selected, remain[:need]])
+            elif selected.numel() > K_total:
+                selected = selected[:K_total]
 
-                        pos_abs = blk_start_off.unsqueeze(-1) + tok_off.view(1, 1, bs_val)
-                        rel_abs = pos_abs - starts_sub.unsqueeze(1).unsqueeze(2)
-                        valid_tok = (rel_abs >= 0) & (rel_abs < L)
-                        pos_abs = pos_abs.clamp_(min=0, max=T - 1)
-                        cand_all = pos_abs.view(G2, -1)
-
-                        nsel_max = int(nsel_sub.max().item())
-                        if nsel_max > 0:
-                            cand_scores = s_all[h_sub].gather(1, cand_all)
-                            invalid_mask = ~valid_tok.view(G2, -1)
-                            cand_scores = cand_scores.masked_fill(invalid_mask, torch.finfo(cand_scores.dtype).min)
-                            _, topi2 = torch.topk(cand_scores, k=nsel_max, dim=-1)
-                            sel_max = cand_all.gather(1, topi2)
-                            mask_len = torch.arange(nsel_max, device=device).view(1, -1) < nsel_sub.view(-1, 1)
-                            sel_scores = s_all[h_sub].gather(1, sel_max)
-                            block_sum = (sel_scores * mask_len).sum(dim=-1)
-                        else:
-                            block_sum = torch.zeros(G2, device=device, dtype=s_all.dtype)
-
-                        ratio = (block_sum + eps) / (base_sub + eps)
-                        accept = (ratio >= self.threshold) | (bs_val == 1)
-
-                        if accept.any():
-                            acc_rows = torch.nonzero(accept, as_tuple=False).squeeze(-1)
-                            for ri in acc_rows.tolist():
-                                hh = int(h_sub[ri].item()); ss = int(s_sub[ri].item())
-                                cand_tokens_hs[hh][ss] = cand_all[ri]  # (M_raw,) LongTensor（合法绝对索引）
-                            accepted[h_sub[accept], s_sub[accept]] = True
-
-                        still = (~accept)
-                        if still.any():
-                            bs_cur[h_sub[still], s_sub[still]] = torch.clamp(
-                                bs_cur[h_sub[still], s_sub[still]] - 1, min=1
-                            )
-
-                if (accepted | (~active)).all():
-                    break
-
-            for h in range(H):
-                pairs = []
-                for s in range(S):
-                    ki = int(n_selects_h[h, s].item())
-                    cand = cand_tokens_hs[h][s]
-                    if ki > 0 and (cand is not None) and cand.numel() > 0:
-                        pairs.append((ki, s, cand))
-
-                if not pairs:
-                    gh = gh_head[h]
-                    out_idx[b, h] = gh[:K_total]
-                    continue
-
-                buckets = {}
-                for ki, s, cand in pairs:
-                    buckets.setdefault(ki, []).append((s, cand))
-
-                chosen_all = []
-                for ki, items in buckets.items():
-                    Gk = len(items)
-                    maxM = max(c.numel() for _, c in items)
-
-                    cand_mat = torch.zeros((Gk, maxM), dtype=dtl, device=device)
-                    cand_mat_mask = torch.zeros((Gk, maxM), dtype=torch.bool, device=device)
-                    for i, (_, c) in enumerate(items):
-                        m = c.numel()
-                        cand_mat[i, :m] = c
-                        cand_mat_mask[i, :m] = True
-
-                    safe_cand = cand_mat.clone()
-                    safe_cand[~cand_mat_mask] = 0
-                    safe_cand.clamp_(0, T - 1)
-
-                    cand_scores = s_all[h].gather(0, safe_cand.view(-1)).view(Gk, maxM)
-                    cand_scores = cand_scores.masked_fill(~cand_mat_mask, torch.finfo(cand_scores.dtype).min)
-
-                    _, topi = torch.topk(cand_scores, k=min(ki, maxM), dim=-1)
-                    top_tok = cand_mat.gather(1, topi)  # (Gk, ki)
-                    chosen_all.append(top_tok.reshape(-1))
-
-                selected = torch.cat(chosen_all, dim=0) if chosen_all else torch.empty(0, dtype=dtl, device=device)
-
-                if selected.numel() > 1:
-                    try:
-                        _, first_idx = torch.unique(selected, sorted=False, return_index=True)
-                        selected = selected[first_idx.sort().indices]
-                    except TypeError:
-                        sel_list = selected.detach().cpu().tolist()
-                        seen = set()
-                        kept = []
-                        for x in sel_list:
-                            if x not in seen:
-                                seen.add(x)
-                                kept.append(x)
-                        selected = torch.tensor(kept, dtype=dtl, device=device)
-
-                if selected.numel() < K_total:
-                    gh = gh_head[h]
-                    remain = gh[~torch.isin(gh, selected)] if selected.numel() > 0 else gh
-                    need = K_total - selected.numel()
-                    selected = torch.cat([selected, remain[:need]], dim=0)
-                elif selected.numel() > K_total:
-                    selected = selected[:K_total]
-
-                out_idx[b, h] = selected
-
-        return out_idx  # (B,H,K_total)
-
+            out_idx[bh] = selected
+        return out_idx.view(B, H, K_total)
 
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
         sample_id = global_vars.current_sample_id
@@ -608,13 +528,7 @@ class SemBlockCluster():
         assert key_states.shape[-2] == query_states.shape[-2]
         bsz, num_heads, q_len, head_dim = query_states.shape
 
-        min_num = (self.max_capacity_prompt - self.window_size) // self.beta
-        max_num = (self.max_capacity_prompt - self.window_size) * 2 - min_num
-        if max_num >= q_len - self.window_size:
-            max_num = q_len - self.window_size
-            min_num = (self.max_capacity_prompt - self.window_size) * 2 - max_num
-        steps = (max_num - min_num) // (self.num_hidden_layers - 1)
-        max_capacity_prompt = max_num - self.layer_idx * steps
+        max_capacity_prompt = self.max_capacity_prompt
 
         print(f"SemBlock max_capacity_prompt {max_capacity_prompt}")
 
@@ -626,24 +540,19 @@ class SemBlockCluster():
             key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
 
-        mask = torch.full((self.window_size, self.window_size),
-                          torch.finfo(attn_weights.dtype).min,
-                          device=attn_weights.device)
+        mask = torch.full((self.window_size, self.window_size), torch.finfo(attn_weights.dtype).min, device=attn_weights.device)
         mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)
         mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
         attention_mask = mask[None, None, :, :]
         attn_weights[:, :, -self.window_size:, -self.window_size:] += attention_mask
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        # (B,H,window,past) -> sum over window => (B,H,past_len)
         attn_weights_sum = attn_weights[:, :, -self.window_size:, : -self.window_size].sum(dim=-2)
 
         if self.pooling == 'avgpool':
-            token_scores = F.avg_pool1d(attn_weights_sum, kernel_size=self.kernel_size,
-                                        padding=self.kernel_size // 2, stride=1)
+            token_scores = F.avg_pool1d(attn_weights_sum, kernel_size=self.kernel_size, padding=self.kernel_size // 2, stride=1)
         elif self.pooling == 'maxpool':
-            token_scores = F.max_pool1d(attn_weights_sum, kernel_size=self.kernel_size,
-                                        padding=self.kernel_size // 2, stride=1)
+            token_scores = F.max_pool1d(attn_weights_sum, kernel_size=self.kernel_size, padding=self.kernel_size // 2, stride=1)
         else:
             raise ValueError('Pooling method not supported')
 
@@ -659,9 +568,9 @@ class SemBlockCluster():
                 if e > s:
                     prior[s:e] = segment_stats[seg_idx]['omega_k']
 
-        prior = (1.0 + alpha * prior).view(1, 1, past_len)
+        prior = (1.0 + alpha * prior).view(1, 1, past_len)  # [1,1,T]
 
-        scores = token_scores * prior
+        scores = token_scores * prior  # 形状仍 [B,H,T]
 
         past_len = key_states.size(2) - self.window_size
 

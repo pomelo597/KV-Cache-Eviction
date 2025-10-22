@@ -278,7 +278,7 @@ def main(args):
                     token_spans,
                     mid_start,
                     mid_end,
-                    min_len=getattr(global_vars, "seg_min_len", 18),
+                    min_len=getattr(global_vars, "seg_min_len", 88),
                 )
                 result_spans.extend(middle_spans_merged)
 
