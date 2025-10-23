@@ -301,7 +301,7 @@ def main(args):
         
         
         if args.method != "FullKV":
-            if args.method.lower() in ["semblock","snapkv","pyramidkv","h2o","sentencekv","chunkkv"]:
+            if args.method.lower() in ["semblock","snapkv","pyramidkv","h2o"]:
                 window_sizes = 8
             elif args.method.lower() in ["streamingllm"]:
                 window_sizes = max_capacity_prompts - 4
@@ -441,7 +441,7 @@ if __name__ == "__main__":
     
     set_seed(args.seed)
     if args.quant_method == "kvquant":
-        from pyramidkv.quantcache import KVQuantizedCache
+        from semblock.quantcache import KVQuantizedCache
         from transformers import cache_utils
         cache_utils.HQQQuantizedCache = KVQuantizedCache
     tokenizer = AutoTokenizer.from_pretrained(
@@ -451,7 +451,7 @@ if __name__ == "__main__":
     )
 
 
-    from pyramidkv.monkeypatch import replace_llama,replace_mistral
+    from semblock.monkeypatch import replace_llama,replace_mistral
     replace_llama(args.method.lower())
     replace_mistral(args.method.lower())
     

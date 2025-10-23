@@ -1,14 +1,14 @@
 from importlib.metadata import version
 import transformers
 
-from semblock.llama_model import llama_flash_attn2_forward_PyramidKV,llama_flash_attn2_forward_SemBlock,llama_flash_attn2_forward_H2O,llama_flash_attn2_forward_SnapKV,llama_flash_attn2_forward_StreamingLLM, llama_flash_attn2_forward_SentenceKV,llama_flash_attn2_forward_ChunkKV
-from semblock.llama_model import llama_attn_forward_PyramidKV,llama_attn_forward_SemBlock,llama_attn_forward_H2O,llama_attn_forward_SnapKV,llama_attn_forward_StreamingLLM, llama_attn_forward_SentenceKV,llama_attn_forward_ChunkKV
-from semblock.llama_model import llama_sdpa_attn_forward_PyramidKV,llama_sdpa_attn_forward_SemBlock,llama_sdpa_attn_forward_H2O,llama_sdpa_attn_forward_SnapKV,llama_sdpa_attn_forward_StreamingLLM, llama_sdpa_attn_forward_SentenceKV,llama_sdpa_attn_forward_ChunkKV
+from semblock.llama_model import llama_flash_attn2_forward_PyramidKV,llama_flash_attn2_forward_SemBlock,llama_flash_attn2_forward_H2O,llama_flash_attn2_forward_SnapKV,llama_flash_attn2_forward_StreamingLLM
+from semblock.llama_model import llama_attn_forward_PyramidKV,llama_attn_forward_SemBlock,llama_attn_forward_H2O,llama_attn_forward_SnapKV,llama_attn_forward_StreamingLLM
+from semblock.llama_model import llama_sdpa_attn_forward_PyramidKV,llama_sdpa_attn_forward_SemBlock,llama_sdpa_attn_forward_H2O,llama_sdpa_attn_forward_SnapKV,llama_sdpa_attn_forward_StreamingLLM
 from semblock.llama_model import adaptive_LlamaModel_forward
 
-from semblock.mistral_model import mistral_flash_attn2_forward_PyramidKV,mistral_flash_attn2_forward_SemBlock,mistral_flash_attn2_forward_H2O,mistral_flash_attn2_forward_SnapKV,mistral_flash_attn2_forward_StreamingLLM,mistral_flash_attn2_forward_SentenceKV,mistral_flash_attn2_forward_ChunkKV
-from semblock.mistral_model import mistral_attn_forward_PyramidKV,mistral_attn_forward_SemBlock,mistral_attn_forward_H2O,mistral_attn_forward_SnapKV,mistral_attn_forward_StreamingLLM,mistral_attn_forward_SentenceKV,mistral_attn_forward_ChunkKV
-from semblock.mistral_model import mistral_sdpa_attn_forward_PyramidKV,mistral_sdpa_attn_forward_SemBlock,mistral_sdpa_attn_forward_H2O,mistral_sdpa_attn_forward_SnapKV,mistral_sdpa_attn_forward_StreamingLLM, mistral_sdpa_attn_forward_SentenceKV,mistral_sdpa_attn_forward_ChunkKV
+from semblock.mistral_model import mistral_flash_attn2_forward_PyramidKV,mistral_flash_attn2_forward_SemBlock,mistral_flash_attn2_forward_H2O,mistral_flash_attn2_forward_SnapKV,mistral_flash_attn2_forward_StreamingLLM
+from semblock.mistral_model import mistral_attn_forward_PyramidKV,mistral_attn_forward_SemBlock,mistral_attn_forward_H2O,mistral_attn_forward_SnapKV,mistral_attn_forward_StreamingLLM
+from semblock.mistral_model import mistral_sdpa_attn_forward_PyramidKV,mistral_sdpa_attn_forward_SemBlock,mistral_sdpa_attn_forward_H2O,mistral_sdpa_attn_forward_SnapKV,mistral_sdpa_attn_forward_StreamingLLM
 from semblock.mistral_model import adaptive_MistralModel_forward
 
 from semblock.llama_model import prepare_inputs_for_generation_llama, prepare_inputs_for_generation_llama_new
@@ -28,18 +28,6 @@ def replace_llama(method, model_name=None):
         transformers.models.llama.modeling_llama.LlamaAttention.forward = llama_attn_forward_SemBlock
         transformers.models.llama.modeling_llama.LlamaFlashAttention2.forward = llama_flash_attn2_forward_SemBlock
         transformers.models.llama.modeling_llama.LlamaSdpaAttention.forward = llama_sdpa_attn_forward_SemBlock
-
-    elif method == "sentencekv":
-        print("Using SentenceKV!")
-        transformers.models.llama.modeling_llama.LlamaAttention.forward = llama_attn_forward_SentenceKV
-        transformers.models.llama.modeling_llama.LlamaFlashAttention2.forward = llama_flash_attn2_forward_SentenceKV
-        transformers.models.llama.modeling_llama.LlamaSdpaAttention.forward = llama_sdpa_attn_forward_SentenceKV
-
-    elif method == "chunkkv":
-        print("Using ChunkKV!")
-        transformers.models.llama.modeling_llama.LlamaAttention.forward = llama_attn_forward_ChunkKV
-        transformers.models.llama.modeling_llama.LlamaFlashAttention2.forward = llama_flash_attn2_forward_ChunkKV
-        transformers.models.llama.modeling_llama.LlamaSdpaAttention.forward = llama_sdpa_attn_forward_ChunkKV
 
     elif method == "streamingllm":
         print("Using StreamingLLM!")
@@ -86,18 +74,6 @@ def replace_mistral(method):
         transformers.models.mistral.modeling_mistral.MistralAttention.forward = mistral_attn_forward_SemBlock
         transformers.models.mistral.modeling_mistral.MistralFlashAttention2.forward = mistral_flash_attn2_forward_SemBlock
         transformers.models.mistral.modeling_mistral.MistralSdpaAttention.forward = mistral_sdpa_attn_forward_SemBlock
-
-    elif method == "sentencekv":
-        print("Using SentenceKV!")
-        transformers.models.mistral.modeling_mistral.MistralAttention.forward = mistral_attn_forward_SentenceKV
-        transformers.models.mistral.modeling_mistral.MistralFlashAttention2.forward = mistral_flash_attn2_forward_SentenceKV
-        transformers.models.mistral.modeling_mistral.MistralSdpaAttention.forward = mistral_sdpa_attn_forward_SentenceKV
-
-    elif method == "chunkkv":
-        print("Using ChunkKV!")
-        transformers.models.mistral.modeling_mistral.MistralAttention.forward = mistral_attn_forward_ChunkKV
-        transformers.models.mistral.modeling_mistral.MistralFlashAttention2.forward = mistral_flash_attn2_forward_ChunkKV
-        transformers.models.mistral.modeling_mistral.MistralSdpaAttention.forward = mistral_sdpa_attn_forward_ChunkKV
     
     elif method == "streamingllm":
         print("Using StreamingLLM!")

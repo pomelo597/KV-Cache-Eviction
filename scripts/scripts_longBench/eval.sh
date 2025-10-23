@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=0
 
-method="SemBlock" # Support SemBlock, PyramidKV, SnapKV, H2O, StreamingLLM, SentenceKV, ChunkKV
+method="SemBlock" # Support SemBlock, PyramidKV, SnapKV, H2O, StreamingLLM
 attn_implementation="flash_attention_2" # Support "flash_attention_2", "sdpa", "eager".
 source_path=""
 model_path="/data/hfhub/Llama-3.1-8B-Instruct"

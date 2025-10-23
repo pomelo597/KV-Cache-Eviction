@@ -26,7 +26,7 @@ import time
 import torch
 import global_vars 
 
-from pyramidkv.monkeypatch import replace_llama,replace_mistral
+from semblock.monkeypatch import replace_llama,replace_mistral
 
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
 
@@ -162,7 +162,7 @@ class LLMNeedleHaystackTester:
                     ).eval()
 
 
-            if self.method in ['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'cam',"adagran","adagran1","adagran2","adagran3","adagran4","adagran5","adagran6","adagran7","adagran8"]:
+            if self.method in ['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'semblock']:
             
                 if self.model_provider == 'LLaMA3':
                     replace_llama(self.method.lower())
@@ -182,9 +182,9 @@ class LLMNeedleHaystackTester:
                     ).eval()
 
                 
-                if self.method.lower() in ["adagran","adagran1","adagran2","adagran3","adagran4","adagran5","adagran6","pyramidkv"]:
+                if self.method.lower() in ["semblock","pyramidkv"]:
                     window_sizes = 8
-                elif self.method.lower() in ["snapkv","streamingllm","h2o","cam","adagran7","adagran8"]:
+                elif self.method.lower() in ["snapkv","streamingllm","h2o"]:
                     window_sizes = 32
                     
                 kernel_sizes = 7
@@ -590,7 +590,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_provider', type=str, default="LLaMA", help='which model to use')
     parser.add_argument('--api_key', type=str, default="", help='OpenAI API Key')
     parser.add_argument('--step', type=int, default=1000)
-    parser.add_argument('--method', type=str, default="full", choices=['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'cam',"adagran","adagran1","adagran2","adagran3","adagran4","adagran5","adagran6","adagran7","adagran8"])
+    parser.add_argument('--method', type=str, default="full", choices=['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'semblock'])
     parser.add_argument('--max_capacity_prompt', type=int, default=128)
     args = parser.parse_args()
 
