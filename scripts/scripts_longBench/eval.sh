@@ -1,10 +1,10 @@
 export CUDA_VISIBLE_DEVICES=0
 
-method="SemBlock" # Support SemBlock, PyramidKV, SnapKV, H2O, StreamingLLM
+method="SABlock" # Support SABlock, PyramidKV, SnapKV, H2O, StreamingLLM
 attn_implementation="flash_attention_2" # Support "flash_attention_2", "sdpa", "eager".
 source_path=""
 model_path="/data/hfhub/Llama-3.1-8B-Instruct"
-save_dir=${source_path}"/data/SemBlock/result/all_sample_baseline_llama3.1-instruct" # path to result save_dir
+save_dir=${source_path}"/data/SABlock/result/all_sample_baseline_llama3.1-instruct" # path to result save_dir
 
 
 for max_capacity_prompts in 64 128 256 512 1024 2048

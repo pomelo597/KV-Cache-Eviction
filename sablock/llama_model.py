@@ -13,11 +13,11 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.utils import (
     logging,
 )
-from semblock.utils import init_pyramidkv, init_semblock, init_snapkv, init_H2O, init_StreamingLLM
+from sablock.utils import init_pyramidkv, init_sablock, init_snapkv, init_H2O, init_StreamingLLM
 import math
 from flash_attn import flash_attn_func, flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-from semblock.utils import DynamicCacheSplitHeadFlatten
+from sablock.utils import DynamicCacheSplitHeadFlatten
 
 logger = logging.get_logger(__name__)
 
@@ -452,7 +452,7 @@ def llama_flash_attn2_forward_PyramidKV(
 
     return attn_output, attn_weights, past_key_value
 
-def llama_attn_forward_SemBlock(
+def llama_attn_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -466,7 +466,7 @@ def llama_attn_forward_SemBlock(
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
 
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
 
     if self.config.pretraining_tp > 1:
         key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
@@ -573,7 +573,7 @@ def llama_attn_forward_SemBlock(
     return attn_output, attn_weights, past_key_value
 
 
-def llama_sdpa_attn_forward_SemBlock(
+def llama_sdpa_attn_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -601,7 +601,7 @@ def llama_sdpa_attn_forward_SemBlock(
             position_embeddings=position_embeddings,
         )
 
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
 
     bsz, q_len, _ = hidden_states.size()
 
@@ -688,7 +688,7 @@ def llama_sdpa_attn_forward_SemBlock(
     return attn_output, None, past_key_value
 
 
-def llama_flash_attn2_forward_SemBlock(
+def llama_flash_attn2_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.LongTensor] = None,
@@ -699,7 +699,7 @@ def llama_flash_attn2_forward_SemBlock(
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
     # LlamaFlashAttention2 attention does not support output_attentions
     if "padding_mask" in kwargs:
         warnings.warn(

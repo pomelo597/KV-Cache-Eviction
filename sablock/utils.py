@@ -290,7 +290,7 @@ class PyramidKVCluster():
 
             return key_states, value_states
 
-class SemBlockCluster(): 
+class SABlockCluster(): 
     def __init__(self, num_hidden_layers = 32, window_size = 64, max_capacity_prompt = 256 + 64,
                  kernel_size = 5, pooling = 'avgpool', beta = 20, num_layers = 80,
                  layer_idx=None, merge=None, threshold: float = 0.85):
@@ -530,7 +530,7 @@ class SemBlockCluster():
 
         max_capacity_prompt = self.max_capacity_prompt
 
-        print(f"SemBlock max_capacity_prompt {max_capacity_prompt}")
+        print(f"SABlock max_capacity_prompt {max_capacity_prompt}")
 
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
@@ -842,7 +842,7 @@ def init_pyramidkv(self, num_hidden_layers):
         merge = self.config.merge,
         )
 
-def init_semblock(self, num_hidden_layers):
+def init_sablock(self, num_hidden_layers):
     if not hasattr(self, "kv_cluster"):
         if not hasattr(self.config, 'window_size'):
             self.config.window_size = 32
@@ -856,7 +856,7 @@ def init_semblock(self, num_hidden_layers):
             self.config.merge = None
     
     
-    self.kv_cluster = SemBlockCluster( 
+    self.kv_cluster = SABlockCluster( 
         num_hidden_layers = num_hidden_layers,
         layer_idx = self.layer_idx,
         window_size = self.config.window_size, 

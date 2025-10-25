@@ -26,7 +26,7 @@ import time
 import torch
 import global_vars 
 
-from semblock.monkeypatch import replace_llama,replace_mistral
+from sablock.monkeypatch import replace_llama,replace_mistral
 
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
 
@@ -162,7 +162,7 @@ class LLMNeedleHaystackTester:
                     ).eval()
 
 
-            if self.method in ['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'semblock']:
+            if self.method in ['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'sablock']:
             
                 if self.model_provider == 'LLaMA3':
                     replace_llama(self.method.lower())
@@ -182,7 +182,7 @@ class LLMNeedleHaystackTester:
                     ).eval()
 
                 
-                if self.method.lower() in ["semblock","pyramidkv"]:
+                if self.method.lower() in ["sablock","pyramidkv"]:
                     window_sizes = 8
                 elif self.method.lower() in ["snapkv","streamingllm","h2o"]:
                     window_sizes = 32
@@ -590,7 +590,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_provider', type=str, default="LLaMA", help='which model to use')
     parser.add_argument('--api_key', type=str, default="", help='OpenAI API Key')
     parser.add_argument('--step', type=int, default=1000)
-    parser.add_argument('--method', type=str, default="full", choices=['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'semblock'])
+    parser.add_argument('--method', type=str, default="full", choices=['full', 'pyramidkv', 'snapkv', 'streamingllm', 'h2o', 'sablock'])
     parser.add_argument('--max_capacity_prompt', type=int, default=128)
     args = parser.parse_args()
 

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
 import torch.nn.functional as F
 import warnings
-from semblock.cache_utils_think import Cache, DynamicCache
+from sablock.cache_utils_think import Cache, DynamicCache
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     repeat_kv,
@@ -13,11 +13,11 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.utils import (
     logging,
 )
-from semblock.utils import init_pyramidkv,init_semblock,init_snapkv,init_H2O,init_StreamingLLM
+from sablock.utils import init_pyramidkv,init_sablock,init_snapkv,init_H2O,init_StreamingLLM
 import math
 from flash_attn import flash_attn_func, flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-from semblock.utils import DynamicCacheSplitHeadFlatten
+from sablock.utils import DynamicCacheSplitHeadFlatten
 
 logger = logging.get_logger(__name__)
 

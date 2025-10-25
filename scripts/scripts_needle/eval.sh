@@ -6,7 +6,7 @@ mkdir -p ./results_needle/logs/
 mkdir -p ./results_needle/img/
 
 
-METHOD='semblock'     
+METHOD='sablock'     
 MAX_CAPACITY_PROMPT=96  
 attn_implementation="flash_attention_2" # Support "flash_attention_2", "sdpa", "None".
 TAG=test

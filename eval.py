@@ -105,14 +105,14 @@ if __name__ == '__main__':
         ["PyramidKV"],
         ["SentenceKV"],
         ["ChunkKV"],
-        ["SemBlock"]
+        ["SABlock"]
     ]
     
     for dataset in dataset_list:
         
         results_list[0].append(dataset)
         
-        for idx, method in enumerate(["FullKV", "SnapKV", "StreamingLLM", "H2O", "PyramidKV", "SentenceKV", "ChunkKV", "SemBlock"]):
+        for idx, method in enumerate(["FullKV", "SnapKV", "StreamingLLM", "H2O", "PyramidKV", "SentenceKV", "ChunkKV", "SABlock"]):
             try:
                 args.method = method
                 args.dataset = dataset

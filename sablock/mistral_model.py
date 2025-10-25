@@ -16,8 +16,8 @@ from transformers.utils import (
     logging,
     is_flash_attn_2_available,
 )
-from semblock.utils import init_pyramidkv, init_semblock, init_snapkv, init_H2O, init_StreamingLLM
-from semblock.utils import DynamicCacheSplitHeadFlatten
+from sablock.utils import init_pyramidkv, init_sablock, init_snapkv, init_H2O, init_StreamingLLM
+from sablock.utils import DynamicCacheSplitHeadFlatten
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -1357,7 +1357,7 @@ def mistral_flash_attn2_forward_PyramidKV(
 
     return attn_output, attn_weights, past_key_value
 
-def mistral_attn_forward_SemBlock(
+def mistral_attn_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -1374,7 +1374,7 @@ def mistral_attn_forward_SemBlock(
         )
     bsz, q_len, _ = hidden_states.size()
 
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
 
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
@@ -1460,7 +1460,7 @@ def mistral_attn_forward_SemBlock(
     return attn_output, attn_weights, past_key_value
 
 
-def mistral_sdpa_attn_forward_SemBlock(
+def mistral_sdpa_attn_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -1486,7 +1486,7 @@ def mistral_sdpa_attn_forward_SemBlock(
             cache_position=cache_position,
         )
 
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
 
     bsz, q_len, _ = hidden_states.size()
 
@@ -1602,7 +1602,7 @@ def mistral_sdpa_attn_forward_SemBlock(
     return attn_output, None, past_key_value
 
 
-def mistral_flash_attn2_forward_SemBlock(
+def mistral_flash_attn2_forward_SABlock(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -1622,7 +1622,7 @@ def mistral_flash_attn2_forward_SemBlock(
     output_attentions = False
 
 
-    init_semblock(self, num_hidden_layers=self.config.num_hidden_layers)
+    init_sablock(self, num_hidden_layers=self.config.num_hidden_layers)
     
     bsz, q_len, _ = hidden_states.size()
 
