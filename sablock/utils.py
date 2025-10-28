@@ -330,7 +330,7 @@ class SABlockCluster():
                 continue
 
             L_k = end - start
-            attn_seg = attn[:, start:end]  # [H, L_k], fp32
+            attn_seg = attn[:, start:end]
 
             I_k = attn_seg.sum(dim=0).mean().item()
 
@@ -340,7 +340,6 @@ class SABlockCluster():
             D_k = entropy.item()
 
             omega_k = I_k * (1 + eta * D_k)
-            #print("eta:",eta)
 
             result.append({
                 "start": start, "end": end, "L_k": L_k, "I_k": I_k, "D_k": D_k, "omega_k": omega_k
@@ -380,7 +379,6 @@ class SABlockCluster():
         seg_lens = seg_ends - seg_starts
         S = segs.size(0)
 
-        # ==== 合并 batch/head ====
         BH = B * H
         scores = token_scores.reshape(BH, T)
 
@@ -423,7 +421,7 @@ class SABlockCluster():
         cand_tokens = [[None for _ in range(S)] for _ in range(BH)]
 
         for bs_val in [13, 11, 9, 7, 5, 3, 2, 1]:
-            mask_hs = (bs_cur == bs_val) & (~accepted) & active     # (BH,S)
+            mask_hs = (bs_cur == bs_val) & (~accepted) & active
             if not mask_hs.any():
                 continue
 
@@ -457,7 +455,7 @@ class SABlockCluster():
                     if kb <= 0:
                         continue
 
-                    blk_ids = top_blk[bh, s, :kb]                   # (<= n_blocks)
+                    blk_ids = top_blk[bh, s, :kb]
                     start = int(seg_starts[s].item())
                     end   = int(seg_ends[s].item())
 
@@ -568,9 +566,9 @@ class SABlockCluster():
                 if e > s:
                     prior[s:e] = segment_stats[seg_idx]['omega_k']
 
-        prior = (1.0 + alpha * prior).view(1, 1, past_len)  # [1,1,T]
+        prior = (1.0 + alpha * prior).view(1, 1, past_len)
 
-        scores = token_scores * prior  # 形状仍 [B,H,T]
+        scores = token_scores * prior
 
         past_len = key_states.size(2) - self.window_size
 
